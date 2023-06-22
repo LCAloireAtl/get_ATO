@@ -1,0 +1,50 @@
+#-- cree csv to plot =
+cd ~/get_ATO
+
+# derrnier fichier .ATO
+fileATO=$(find -name \.ATO-\*csv -mtime 0 | sort -h | tail -1 | xargs basename)
+
+# première extraction "nettoyée"
+head -n -3 /home/vagrant/get_ATO/$fileATO | grep -v ^heures > /home/vagrant/get_ATO/ATOplot.csv
+
+head -qn -3 $(find -name \.ATO\*.csv -mmin -480 | sort -h) | grep -v ^heures | sort -h | tac > test && awk '!x[$0]++' test > /home/vagrant/get_ATO/ATOplot.csv
+
+# Min Max
+#sh getMinMax /home/vagrant/get_ATO/ATOplot.csv
+#version avec titres
+sh getHighLess
+
+# 17h35 ?
+if [ $(head -n +3 /home/vagrant/get_ATO/$fileATO | grep -c "17:35") -gt 0 ]; then
+#~copy sur file of day :
+cp /home/vagrant/get_ATO/ATOplot.csv /home/vagrant/get_ATO/.ATO-ALL-$(date +%Y%m%d).csv && gzip -f /home/vagrant/get_ATO/.ATO-ALL-$(date +%Y%m%d).csv
+	FIRSTline=$(tac $fileATO | grep -n "17:35" | head -n 1 | awk -F":" '{ print $1 }')
+	NBlines=$(wc -l $fileATO | awk '{ print $1 }')
+	LASTtac=$(echo "$FIRSTline - $NBlines" | awk -F"-" '{ print $2 - $1 }')
+	VOLonEND=$(tac $fileATO | tail -n $LASTtac | awk -F',' '{ summ+=$3; } END{ print summ; }')
+	grep "17:35" $fileATO | head -n 1 | awk -v env_var="$VOLonEND" -F',' '{ print $1","$2","env_var }'
+	#VOLonEND=$(grep "17:35" $fileATO | awk -F',' '{ summ+=$3; } END{ print summ; }')
+fi
+
+#csv plot Cours inversé
+( while IFS=',' read a b c; do echo "$b,$(date --date=$a +%s)"; done ) < ATOplot.csv | tac > ATOplots_since.csv
+
+#csv plot Volume inversé
+( while IFS=',' read a b c; do echo "$c,$(date --date=$a +%s)"; done ) < ATOplot.csv | tac > ATOplots_vols.csv
+
+echo "set title 'ATOS - $(date)'
+set ylabel 'cours'
+set xlabel 'temps'
+set grid
+set term png
+set output 'ATO.png'
+plot '/home/vagrant/get_ATO/ATOplots_since.csv' with linespoints ls 1
+set ylabel 'volume'
+set output 'ATOvols.png'
+plot '/home/vagrant/get_ATO/ATOplots_vols.csv' with linespoints ls 1
+" > cmdgnu
+
+gnuplot cmdgnu
+
+export DISPLAY=169.254.154.189:0.0
+display ATO.png & display ATOvols.png &
